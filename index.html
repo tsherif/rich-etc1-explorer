@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title></title>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script type="vertex" id="vs">
+    attribute vec2 position;
+
+    varying vec2 vUV;
+
+    void main() {
+        vUV = position * 0.5 + 0.5;
+        gl_Position = vec4(position, 0.0, 1.0);
+    }
+</script>
+<script type="fragment" id="fs">
+    precision highp float;
+
+    uniform sampler2D texture;
+
+    varying vec2 vUV;
+
+    void main() {
+        gl_FragColor = texture2D(texture, vUV);
+    }
+</script>
+<script>
+    var DDS_CONSTANTS = {
+        MAGIC_NUMBER: 0x20534444,
+        MIPMAPCOUNT_FLAG: 0x20000,
+        PIXEL_FORMAT_FOURCC_FLAG: 0x4,
+
+        HEADER_LENGTH: 31,
+
+        MAGIC_NUMBER_INDEX: 0,
+
+        SIZE_INDEX: 1,
+        FLAGS_INDEX: 2,
+        HEIGHT_INDEX: 3,
+        WIDTH_INDEX: 4,
+
+        MIPMAPCOUNT_INDEX: 7,
+        
+        PIXEL_FORMAT_FLAGS_INDEX: 20,
+        PIXEL_FORMAT_FOURCC_INDEX: 21,
+
+        DATA_OFFSET: 128,
+    };
+
+    var canvas = document.getElementById("canvas");
+    var gl = canvas.getContext("webgl");
+    var etc1Extension = gl.getExtension("WEBGL_compressed_texture_etc1");
+
+    gl.clearColor(0, 0, 0, 1);
+
+    var vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, document.getElementById("vs").text);
+    gl.compileShader(vs);
+
+    var fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, document.getElementById("fs").text);
+    gl.compileShader(fs);
+
+    var program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+
+    gl.useProgram(program);
+
+    var positionLocation = gl.getUniformLocation(program, "position");
+    var textureLocation = gl.getUniformLocation(program, "texture");
+    gl.uniform1i(textureLocation, 0);
+
+    var buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        -1, 1,
+        -1, -1,
+        1, -1,
+        -1, 1,
+        1, -1,
+        1, 1
+    ]), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(positionLocation);
+
+
+    // var image = new Image();
+
+    // image.onload = function() {
+    //     canvas.width = image.width;
+    //     canvas.height = image.height;
+    //     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+
+    //     var texture = gl.createTexture();
+    //     gl.activeTexture(gl.TEXTURE0);
+    //     gl.bindTexture(gl.TEXTURE_2D, texture);
+    //     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    //     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    //     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    //     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    //     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+    //     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+
+    //     gl.clear(gl.COLOR_BUFFER_BIT);
+    //     gl.drawArrays(gl.TRIANGLES, 0, 6);
+    // };
+
+    // image.src = "skull_normal_map.jpg";
+
+    var request = new XMLHttpRequest();
+    request.open("GET", "muscleatlas-etc1.dds");
+    request.responseType = "arraybuffer";
+
+    request.onload = function() {
+        image = parseDDS(request.response);
+
+        canvas.width = image.width;
+        canvas.height = image.height;
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+
+        var texture = gl.createTexture();
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, etc1Extension.COMPRESSED_RGB_ETC1_WEBGL, image.width, image.height, 0, image.data);
+
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+    };
+
+    request.send(null);
+
+    function parseDDS(buffer) {
+
+        var header = new Uint32Array(buffer, 0, DDS_CONSTANTS.HEADER_LENGTH);
+
+        if (header[DDS_CONSTANTS.MAGIC_NUMBER_INDEX] != DDS_CONSTANTS.MAGIC_NUMBER) {
+            throw "Invalid DDS File: Magic number invalid.";
+        }
+
+        if (header[DDS_CONSTANTS.PIXEL_FORMAT_FLAGS_INDEX] & DDS_CONSTANTS.PIXEL_FORMAT_FOURCC_FLAG === 0) {
+            throw "Invalid DDS File: FourCC required.";
+        }
+
+        var mipMapLevels = 1;
+        if (header[DDS_CONSTANTS.FLAGS_INDEX] & DDS_CONSTANTS.MIPMAPCOUNT_FLAG) {
+            mipMapLevels = header[DDS_CONSTANTS.MIPMAPCOUNT_INDEX];
+        }
+
+        var width = header[DDS_CONSTANTS.WIDTH_INDEX];
+        var height = header[DDS_CONSTANTS.HEIGHT_INDEX];
+
+        var data = new Uint8Array(buffer, DDS_CONSTANTS.DATA_OFFSET, levelSize(width, height));
+
+        return {
+            width: width,
+            height: height,
+            data: data
+        }
+    }
+
+    // Builds a numeric code for a given fourCC DDS file string
+    function parseFourCC(value) {
+      return value.charCodeAt(0) +
+            (value.charCodeAt(1) << 8) +
+            (value.charCodeAt(2) << 16) +
+            (value.charCodeAt(3) << 24);
+    }
+
+    // https://www.khronos.org/registry/webgl/extensions/WEBGL_compressed_texture_etc1/
+    function levelSize(width, height) {
+        return Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * 8;
+    }
+</script>
+</body>
+</html>
