@@ -1,4 +1,4 @@
-Crunch ETC1 Tester
-==================
+Rich's ETC1 Explorer
+====================
 
-A tool for exploring ETC1 textures. Created to help debug textures produced by crunch that aren't rendering correctly.
+A tool to help Rich explore ETC1 textures produced by crunch that aren't rendering correctly.
