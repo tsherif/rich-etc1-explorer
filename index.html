@@ -1,10 +1,91 @@
 <!DOCTYPE html>
+<!--
+  This is free and unencumbered software released into the public domain.
+
+  Anyone is free to copy, modify, publish, use, compile, sell, or
+  distribute this software, either in source code form or as a compiled
+  binary, for any purpose, commercial or non-commercial, and by any
+  means.
+
+  In jurisdictions that recognize copyright laws, the author or authors
+  of this software dedicate any and all copyright interest in the
+  software to the public domain. We make this dedication for the benefit
+  of the public at large and to the detriment of our heirs and
+  successors. We intend this dedication to be an overt act of
+  relinquishment in perpetuity of all present and future rights to this
+  software under copyright law.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+  IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+  OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+  OTHER DEALINGS IN THE SOFTWARE.
+
+  For more information, please refer to <http://unlicense.org>
+-->
 <html>
 <head>
-    <title></title>
+    <style>
+        #info {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 200px;
+            height: 100%;
+            z-index: 1000;
+            border: 1px solid black;
+            padding: 10px;
+            background-color: white;
+        }
+
+        .info-section {
+            margin: 8px;
+        }
+
+        #indicator {
+            z-index: 100;
+        }
+
+        #canvas, #indicator {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+    </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
+<canvas id="indicator"></canvas>
+<div id="info">
+    <h3>Rich's ETC1 Explorer</h3>
+    <div class="info-section">
+        Images:
+        <ul>
+            <li><a class="load-image" href="skull_normal_map-etc1.dds">Skull Normal Map ETC1</a>
+            <li><a class="load-image" href="skull_normal_map.jpg">Skull Normal Map JPG</a>
+            <li><a class="load-image" href="muscleatlas-etc1.dds">Muscle Atlas ETC1</a>
+            <li><a class="load-image" href="muscleatlas.jpg">Muscle Atlas JPG</a>
+        </ul>   
+    </div>
+    <div class="info-section">
+        Pixel coords: <span id="coords"></span><BR>
+            <a class="pixel-nav" href="left">Left</a>
+            <a class="pixel-nav" href="right">Right</a>
+            <a class="pixel-nav" href="up">Up</a>
+            <a class="pixel-nav" href="down">Down</a>
+    </div>
+    <div>
+        R: <input type="text" id="red" size=3><BR>
+        G: <input type="text" id="green" size=3><BR>
+        B: <input type="text" id="blue" size=3><BR>
+    </div>
+    <div class="info-section">
+        <button id="find-all">Find all of this color</button>
+        <textarea id="find-all-out" rows="10"></textarea>
+    </div>  
+</div>
 <script type="vertex" id="vs">
     attribute vec2 position;
 
@@ -27,6 +108,16 @@
     }
 </script>
 <script>
+    var indicatorCanvas = document.getElementById("indicator");
+    var indicatorCtx = indicatorCanvas.getContext("2d");
+    var info = document.getElementById("info");
+    var coords = document.getElementById("coords");
+    var red = document.getElementById("red");
+    var green = document.getElementById("green");
+    var blue = document.getElementById("blue");
+    var findAll = document.getElementById("find-all");
+    var findAllOut = document.getElementById("find-all-out");
+
     var DDS_CONSTANTS = {
         MAGIC_NUMBER: 0x20534444,
         MIPMAPCOUNT_FLAG: 0x20000,
@@ -87,58 +178,148 @@
     gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(positionLocation);
 
+    loadETC1("skull_normal_map-etc1.dds");
 
-    // var image = new Image();
+    var pixels;
+    function loadJPG(src) {
+        var image = new Image();
+        image.onload = function() {
+            canvas.width = image.width;
+            canvas.height = image.height;
+            gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+            indicatorCanvas.width = image.width;
+            indicatorCanvas.height = image.height;
+            pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
 
-    // image.onload = function() {
-    //     canvas.width = image.width;
-    //     canvas.height = image.height;
-    //     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+            var texture = gl.createTexture();
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
-    //     var texture = gl.createTexture();
-    //     gl.activeTexture(gl.TEXTURE0);
-    //     gl.bindTexture(gl.TEXTURE_2D, texture);
-    //     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    //     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    //     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    //     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-    //     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
 
-    //     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            checkPixel();
+        };
 
-    //     gl.clear(gl.COLOR_BUFFER_BIT);
-    //     gl.drawArrays(gl.TRIANGLES, 0, 6);
-    // };
+        image.src = src;
+    }
 
-    // image.src = "skull_normal_map.jpg";
+    function loadETC1(src) {
+        var request = new XMLHttpRequest();
+        request.open("GET", src);
+        request.responseType = "arraybuffer";
 
-    var request = new XMLHttpRequest();
-    request.open("GET", "muscleatlas-etc1.dds");
-    request.responseType = "arraybuffer";
+        request.onload = function() {
+            image = parseDDS(request.response);
 
-    request.onload = function() {
-        image = parseDDS(request.response);
+            canvas.width = image.width;
+            canvas.height = image.height;
+            gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+            indicatorCanvas.width = image.width;
+            indicatorCanvas.height = image.height;
+            pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
 
-        canvas.width = image.width;
-        canvas.height = image.height;
-        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+            var texture = gl.createTexture();
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
-        var texture = gl.createTexture();
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+            gl.compressedTexImage2D(gl.TEXTURE_2D, 0, etc1Extension.COMPRESSED_RGB_ETC1_WEBGL, image.width, image.height, 0, image.data);
 
-        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, etc1Extension.COMPRESSED_RGB_ETC1_WEBGL, image.width, image.height, 0, image.data);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            checkPixel();
+        };
 
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-    };
+        request.send(null);
+    }
 
-    request.send(null);
+    var r, g, b;
+    var canvasX = 0;
+    var canvasY = 0;
+    indicator.addEventListener("mouseup", function(event) {
+        canvasX = event.pageX;
+        canvasY = event.pageY;
+
+        checkPixel();
+    });
+
+    info.addEventListener("click", function(event) {
+        if (event.target.tagName !== "A") {
+            return;
+        }
+        
+        if (event.target.className === "load-image") {
+            var src = event.target.href;
+
+            if (src.match(/\.jpg/)) {
+                loadJPG(src);
+            } else {
+                loadETC1(src); 
+            }
+        }
+
+        if (event.target.className === "pixel-nav") {
+            var dir = event.target.href.replace(/.+\//g, "");
+
+            if (dir === "left") {
+                --canvasX;
+            } else if (dir === "right") {
+                ++canvasX;
+            } else if (dir === "up") {
+                --canvasY;
+            } else {
+                ++canvasY;
+            }
+
+            checkPixel();
+        }
+
+        event.preventDefault();
+    });
+
+    findAll.addEventListener("click", function() {
+        var r = parseInt(red.value, 10);
+        var g = parseInt(green.value, 10);
+        var b = parseInt(blue.value, 10);
+        findAllOut.value = "";
+        for (var y = 0; y < gl.drawingBufferHeight; ++y) {
+            for (var x = 0; x < gl.drawingBufferWidth; ++x) {
+                var index = (y * gl.drawingBufferWidth + x) * 4;
+                if (pixels[index] === r && pixels[index + 1] === g && pixels[index + 2] === b) {
+                    if (findAllOut.value !== "") {
+                        findAllOut.value += "\n";
+                    }
+                    findAllOut.value += "(" + x + ", " + y + ")"
+                }
+            }
+        }
+    });
+
+    function checkPixel() {
+        var x = canvasX;
+        var y = canvas.height - canvasY - 1;
+        var index = (y * gl.drawingBufferWidth + x) * 4;
+
+        r = pixels[index];
+        g = pixels[index + 1];
+        b = pixels[index + 2];
+        
+        coords.innerText = "(" + x + ", " + y + ")";
+        red.value = r;
+        green.value = g;
+        blue.value = b;
+
+        indicatorCtx.clearRect(0, 0, canvas.width, canvas.height);
+        indicatorCtx.fillStyle = "#FF0";
+        indicatorCtx.fillRect(canvasX - 2.5, canvasY - 2.5, 5, 5);
+    }
 
     function parseDDS(buffer) {
 
@@ -167,14 +348,6 @@
             height: height,
             data: data
         }
-    }
-
-    // Builds a numeric code for a given fourCC DDS file string
-    function parseFourCC(value) {
-      return value.charCodeAt(0) +
-            (value.charCodeAt(1) << 8) +
-            (value.charCodeAt(2) << 16) +
-            (value.charCodeAt(3) << 24);
     }
 
     // https://www.khronos.org/registry/webgl/extensions/WEBGL_compressed_texture_etc1/
